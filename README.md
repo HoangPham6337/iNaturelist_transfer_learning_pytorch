@@ -20,6 +20,9 @@ This section details the scripts specifically used for the activation-based bloc
   2. Overlaying the activation values onto this strategy.
   3. Applying pruning only where a match (consistent "deadness") occurs, otherwise leaving the channels unpruned.
 
+**Neuron activation threshold table** (Measure on MobilenetV3 trained on the entire Haute-Garonne dataset of birds and insects) The higher the neuron activation threshold, the more aggressive the pruning will be. 0 means always activate, 1 means completely dead
+
+![Neuron activation table](./examples/neuron_activation_table.png)
 
 Neuron activation value
 
