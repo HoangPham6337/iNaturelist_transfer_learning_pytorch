@@ -22,10 +22,13 @@ This section details the scripts specifically used for the activation-based bloc
 
 
 Neuron activation value
+
 ![Neuron activation value](./examples/features_15_block_3_0_hist.png)
 
 Channel deadness visualization (the brighter the image, the more dead the channel)
+
 ![Channel deadness visualization](./examples//features_15_block_3_0_deadness_grid.png)
 
 Activation overlaid on image (`features_15_block_3_0`)
+
 ![Activation overlaid on image](./examples/step_60_features_15_block_3_0_Conv2d_160ch_k1s1.png)
