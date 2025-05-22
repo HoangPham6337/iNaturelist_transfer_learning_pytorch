@@ -1,144 +1,31 @@
-# Edge-Aware Fine-Grained Classification using Transfer Learning implemented in Pytorch
+# Activation-Based Block Pruning Experiment
+This section details the scripts specifically used for the activation-based block pruning experiment:
 
-## Table of contents
+- `experiment_activation_based_block_pruning.py`: The core script for executing the activation-based pruning. It loads pre-calculated deadness scores and applies block-wise pruning to the MobileNetV3 model using `torch_pruning`.
+- `get_model_architecture.py`: Used to extract and structure the layer names within MobileNetV3 blocks, generating a JSON file (mobilenetv3_block_structure.json) essential for block-wise pruning.
+- `mobilenetv3_features.py`: Defines and saves the MobileNetV3 block structure mapping (e.g., expand, depthwise layers to their module names) to `mobilenetv3_block_structure.json`.
+- `visualize_neuron_activations.py`: Analyzes and visualizes the distribution of neuron activation magnitudes across the network, aiding in determining thresholds for "deadness" detection.
+- `visualize_channel_activation.py`: Calculates, visualizes, and saves per-channel "deadness" scores (how often activations fall below a threshold) into a JSON file (e.g., `pruning_plan_XX.json`), which serves as the pruning guide.
+- `validate_model_structure.py`: Verifies the structural integrity of the pruned model by performing a forward pass and checking for runtime errors.
+- `visualize_activation_overlay_image.py`: Visualizes activation heatmaps overlaid on input images, useful for understanding the model's focus, both before and after pruning.
 
-1. [Overview](#overview)
-2. [Credits](#credits)
-3. [Dependencies and Installation](#dependencies-and-installation)
-4. [Dataset Preparation](#dataset-preparation)
-5. [Project Structure](#project-structure)
-6. [Key Design Choices](#key-design-choices)
+# Findings and Challenges
+- **Capturing Activation Magnitudes**: It is indeed possible to capture the activation magnitude of each individual neuron. Since these are real feature map values calculated from layer weights, the memory footprint can be massive, especially when processing a full dataset.
+- **Mitigating RAM Usage**: To address the substantial RAM usage, stratified sampling can be employed to obtain a smaller, representative subset of the dataset that still encompasses all species.
+- **Neuron Activation Threshold Sensitivity**: The choice of neuron activation threshold is critical for determining channel "deadness". Setting this threshold too high risks incorrectly identifying active channels as dead, leading to excessive pruning.
+- **Structural Integrity and Dependencies**: A significant challenge in pruning is maintaining the model's structural integrity. Pruning one layer often necessitates corresponding pruning in subsequent, dependent layers. This layer-by-layer approach introduces complex inter-dependencies.
+- **Dynamic Deadness**: Pruning an earlier layer can alter the activation patterns of downstream layers, meaning channels previously identified as "dead" might become active, or vice-versa, or even cease to exist.
+- **Proposed Next Step**: Global Pruning Strategy: To address these complexities, a global pruning strategy is proposed. This involves:
+  1. Generating an initial pruning strategy based on the first layer's activations.
+  2. Overlaying the activation values onto this strategy.
+  3. Applying pruning only where a match (consistent "deadness") occurs, otherwise leaving the channels unpruned.
 
-## Overview
-This project is the continuation of this [repo](https://github.com/HoangPham6337/cvpr18-inaturalist-transfer), implemented in Tensorflow V1. We explores the application of transfer learning on a small subset of the iNaturelist 2017 dataset and various optimization techniques like pruning, quantization and model distillation. We aim to optimize fine-grained species classification for edge devices.
 
-### Objectives
-- [x] Fine-tuned the model on a regional species subset.
-- [x] Implement an 'Other' classification for non-dominant species.
-- [ ] Create a custom `logits` layer (final characterization) using `logsumexp` that can vary the output based on dominant threshold. 
-- [x] Prune layer by layer
-- [x] Prune globally
-- [ ] Prune based on the activated feature maps
-- [ ] Analyze the feature maps of the model if fine-tuning proves insufficient
-- [ ] Improve real-time performance & efficiency of classification models
+Neuron activation value
+![Neuron activation value](./examples/features_15_block_3_0_hist.png)
 
-### Why Edge computing?
-In real-world scenario, deploying large-scale models on edge devices (RaspberryPi, IoT devices, ...) is challenging due to:
-- Limited computational power
-- Lower memory availability
-- Network independence
+Channel deadness visualization (the brighter the image, the more dead the channel)
+![Channel deadness visualization](./examples//features_15_block_3_0_deadness_grid.png)
 
-By fine-tuning the model with a focused dataset and optimizing its feature representations, we aim to enhance model performance while minimizing resource consumption.
-
-## Credits 
-Authors of the original works this project based on:
-
-- [Yin Cui](http://www.cs.cornell.edu/~ycui/)
-- [Yang Song](https://ai.google/research/people/author38269)
-- [Chen Sun](http://chensun.me/)
-- Andrew Howard
-- [Serge Belongie](http://blogs.cornell.edu/techfaculty/serge-belongie/)
-
-CVPR2018
-
-**This project is based on the original work from:**
-- [Large Scale Fine-Grained Categorization and Domain-Specific Transfer Learning (CVPR 2018)](https://arxiv.org/abs/1806.06193)
-- [Original GitHub Repository](https://github.com/richardaecn/cvpr18-inaturalist-transfer)
-
-## Dependencies and Installation
-
-This codebase uses `Pytorch 2.6.0` as its backbone.
-Setting up is fairly straight forward, you can install all the dependencies through:
-```python
-pip install -r requirements.txt
-```
-
-The `dataset_builder` install instructions can be found by going to this [repo](https://github.com/HoangPham6337/iNaturelist_dataset_builder).
-
-## Dataset Preparation
-**This project uses a subset of iNaturelist 2017 combined with species from Haute-Garonne. The dataset must be manually downloaded and processed before training.**
-
-### Dataset Preparation
-We provide a modular and automated pipeline using the `dataset_builder` package. Configuration is handled via `config.yaml`.
-
-### Steps (automated by `dataset_orchestrator.py`)
-
-1. Crawl species from iNaturalist (Haute-Garonne region)
-2. Analyze dataset structure (class/species breakdown, image counts)
-3. Cross-reference species between source and regional datasets
-4. Copy matched species into a new dataset to create regional datasets
-5. Label species based on dominant threshold
-5. Generate train/validation manifests 
-10. Produce visualizations (bar charts, CDF, PPF, Venn diagrams)
-
-If any operations fails, a `FailedOperation` is rased and the script will:
-- Print a traceback
-- Exit gracefully
-
-### Configuration file: `config.yaml`
-This file can be created automatically through the `create_interactive_config.py`.
-
-```yaml
-global:
-  included_classes: ["Aves", "Insecta"]  # Species class to analyze
-  verbose: false  # Print extra debugging info
-  overwrite: false  # Overwrite existing file
-
-paths:
-  src_dataset: "./data/inat2017"  # Source dataset
-  dst_dataset: "./data/haute_garonne"  # Target dataset
-  web_crawl_output_json: "./output/haute_garonne.json"  # Path to save crawl result
-  output_dir: "./output"  # Path to save all JSON files
-
-web_crawl:
-  total_pages: 104
-  base_url: "https://www.inaturalist.org/check_lists/32961-Haute-Garonne-Check-List?page="
-  delay_between_requests: 1
-
-train_val_split:
-  train_size: 0.8
-  random_state: 42
-  dominant_threshold: 0.5
-```
-
-Output:
-- `*_species.json`: class → list of species
-- `*_composition.json`: class/species → {species: count}
-- `matched_species.json`: Cross-reference results
-- `train.parquet`, `val.parquet`, `dataset_manifest.parquet`: Data splits
-- `plots/`: CDF, PPF, Venn diagrams, class bar charts
-
-## Project Structure
-
-All pipeline core functions has been implemented in `pipeline/`
-
-### Training Pipeline
-- `train_single.py`: Train a baseline MobileNetV3 model (with optional experimental hyperparameter tuning).
-- `train_multiple.py`: Retrains pruned models (from `models/`) with different dominant thresholds
-
-### Pruning Pipeline
-- `prune.py`: Applies structure **global** (with isomorphic) and **layer by layer** (with isomorphic) pruning using `torch-pruning` ([link](https://github.com/VainF/Torch-Pruning))
-- `experiment_prune.py`: Demonstrates layer-specific pruning with `pruning_ratio_dict`.
-- We uses Magnitude Pruning (L1 norm).
-
-### Feature Map Analysis
-- `feature_maps_extractor.py`: Extracts shape + memory shape of feature maps.
-- `feature_maps_analysis.py`: Heatmap visualization across pruning levels and dominance thresholds.
-
-### MACs + Parameter Profiling
-- `mac_cal.py`: Uses `thop.profile()` to calculate MACs and parameters of pruned models.
-
-### Monte Carlo Simulation
-- `MonteCarloBenchmark.py`: Baseline test that groups non-dominant species into an "Other" class for practical deployment settings.
-  - Repeatedly samples species and evaluates ONNX models.
-  - Evaluates communication rate, false positive rate (FPR), confusion matrix.
-  - Evaluates robustness across random compositions and species coverage.
-
-### Post-hoc Evaluation
-- `post_hoc_approach.py`: Proof-of-concept that groups non-dominant species into an "Other" class for practical deployment settings.
-
-## Key Design Choices
-- Dominant Species Filtering: Allows dynamic focus on high-frequency species.
-- Model Compression: Achieved via structured pruning with retraining for accuracy recovery.
-- Robust Evaluation: Monte Carlo simulations simulate field deployment by testing varying species distributions.
-- Interpretability: Feature map memory footpring and sparsity metrics are visualized layer-by-layer.
+Activation overlaid on image (`features_15_block_3_0`)
+![Activation overlaid on image](./examples/step_60_features_15_block_3_0_Conv2d_160ch_k1s1.png)
