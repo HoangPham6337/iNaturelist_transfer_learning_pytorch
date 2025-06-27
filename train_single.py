@@ -24,7 +24,7 @@ NUM_SPECIES = len(species_labels.keys())
 NAME = "convnext_full_inat_bird_insect"
 ENABLE_EXPERIMENTAL_HYPERPARAM_TUNING = False
 
-model = convnext_large_builder(device, num_outputs=NUM_SPECIES, start_with_weight=True)
+model = mobile_net_v3_large_builder(device, num_outputs=NUM_SPECIES, start_with_weight=True)
 train_dataset = CustomDataset(train, train=True)
 val_dataset = CustomDataset(val, train=False)
 

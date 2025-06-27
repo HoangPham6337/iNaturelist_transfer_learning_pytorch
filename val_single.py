@@ -21,12 +21,13 @@ BATCH_SIZE = 64
 NUM_WORKERS = 12
 NAME = "mobilenet_v3_large"
 
-_, _, val_images, species_labels, species_composition = manifest_generator_wrapper(1.0)
+_, _, val_images, species_labels, species_composition = manifest_generator_wrapper(0.5)
 
 # with open("./data/haute_garonne/dataset_species_labels_full_bird_insect.json") as file:
 #     species_labels = json.load(file)
 
 species_names = list(species_labels.values())
+unique_id = list(species_labels.keys())
 val_dataset = CustomDataset(val_images, train=False)
 val_loader = DataLoader(
     val_dataset,
@@ -43,7 +44,7 @@ total_support_list = get_support_list(
 
 model = convnext_large_builder(
     device,
-    path="/home/tom-maverick/remotedir/models/convnext_full_inat_bird_insect_epoch_19.pth",
+    path="/home/tom-maverick/Documents/Final Results/MobileNetV3/mobilenet_v3_large_50.pth",
 )
 
 model.eval()
@@ -72,7 +73,7 @@ print(f"Validation accuracy: {accuracy:.4f}")
 print(f"Weighted Recall: {weighted_recall:.4f}")
 print(f"Weighted Average F1-Score: {f1:.4f}")
 report_df = generate_report(
-    all_labels, all_preds, species_names, total_support_list, float(accuracy)
+    all_labels, all_preds, species_names, unique_id, total_support_list, float(accuracy)
 )
 
 with pd.option_context("display.max_rows", None, "display.max_columns", None):
