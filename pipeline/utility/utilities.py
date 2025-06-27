@@ -288,6 +288,7 @@ def generate_report(
     all_labels: List[int],
     all_preds: List[int],
     species_names: List[str],
+    unique_labels: List[int],
     total_support_list: List[int],
     accuracy: float,
 ) -> pd.DataFrame:
@@ -310,6 +311,7 @@ def generate_report(
     report_dict = classification_report(
         all_labels,
         all_preds,
+        labels=unique_labels,
         target_names=species_names,
         output_dict=True,
         zero_division=0,
