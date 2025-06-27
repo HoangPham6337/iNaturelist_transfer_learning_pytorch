@@ -17,4 +17,4 @@ web_crawl:
 train_val_split:
   train_size: 0.8
   random_state: 42
-  dominant_threshold: 0.9
+  dominant_threshold: 0.5
