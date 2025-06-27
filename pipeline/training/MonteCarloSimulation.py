@@ -1,16 +1,24 @@
-import random
 import os
-import numpy as np
-import pandas as pd
-import onnxruntime as ort
-import scipy.special
-from tqdm import tqdm
-from typing import Dict, List, Union, Tuple, Optional
+import random
 from collections import defaultdict
-import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, accuracy_score
+from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import onnxruntime as ort
+import pandas as pd
+import scipy.special
 from dataset_builder.core.utility import load_manifest_parquet
+from sklearn.metrics import accuracy_score, f1_score
+from tqdm import tqdm
+
+from pipeline.training.utility import (
+    create_stratified_weighted_sample,
+    false_positive_rate,
+    plot_confusion_matrix,
+    save_report
+)
 from pipeline.utility import generate_report, get_support_list, preprocess_eval_opencv
+
 
 class MonteCarloSimulation:
     """
@@ -38,16 +46,16 @@ class MonteCarloSimulation:
     """
     def __init__(
         self, 
-        model_path, 
+        model_path: str, 
         data_manifest: Union[str, List[Tuple[str, int]]], 
-        dataset_species_labels, 
+        dataset_species_labels: Dict[int, str], 
         is_inception_v3: bool,
-        input_size=(224, 224),
+        input_size: Tuple[int, int]=(224, 224),
         providers: List[str]=["CPUExecutionProvider"]
     ):
         self.model_path = model_path
         self.input_size = input_size
-        self.species_labels: Dict[int, str] = dataset_species_labels
+        self.species_labels = dataset_species_labels
         
         self.other_class_id = int(self._get_other_id())
         if isinstance(data_manifest, str):
@@ -115,79 +123,13 @@ class MonteCarloSimulation:
             return None
 
 
-    def _plot_confusion_matrix(self, y_true, y_pred):
-        """
-        Plots and saves a confusion matrix for the model's predictions on the given true labels.
-
-        Args:
-            y_true (List[int]): 
-                Ground truth class IDs.
-            y_pred (List[int]): 
-                Predicted class IDs from the model.
-
-        Notes:
-            - Uses `sklearn.metrics.ConfusionMatrixDisplay` to visualize the matrix.
-            - Axis labels are derived from `self.species_labels` (class ID to name).
-            - The plot is saved as a PNG file with the filename:
-                "MonteCarloConfusionMatrix_<model_name>.png"
-            - The figure size is large (40x40 inches).
-        """
-        cm = confusion_matrix(y_true, y_pred, labels=list(map(int, self.species_labels.keys())))
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=list(self.species_labels.values()))
-        fig, ax = plt.subplots(figsize=(40, 40))
-        disp.plot(ax=ax, xticks_rotation=50, cmap="Blues", colorbar=True)
-        plt.title("Confusion Matrix (Monte Carlo Simulation)")
-        plt.tight_layout()
-        plt.savefig(f"MonteCarloConfusionMatrix_{os.path.basename(self.model_path).replace('.onnx', '')}.png")
-
-
-    def _false_positive_rate(self, y_true, y_pred):
-        """
-        Computes the false positive rate (FPR) for the "Other" class predictions.
-
-        Specifically, it measures how often the model incorrectly predicts a sample that should be classified as "Other" (communication) into a different (local) class.
-
-        Args:
-            y_true (List[int]): 
-                Ground truth class IDs.
-            y_pred (List[int]): 
-                Predicted class IDs from the model.
-
-        Returns:
-            float: 
-                The false positive rate, calculated as:
-                    FPR = False Positives / (False Positives + True Negatives)
-                Returns 0.0 if there are no samples of the "Other" class.
-
-        Notes:
-            - "False Positive" (FP): 
-                True label is "Other", but the model predicts a different class.
-            - "True Negative" (TN): 
-                True label is "Other", and the model correctly predicts "Other".
-            - If there are no "Other" class samples, the function returns 0.0.
-        """
-        # true: local / false: communication
-        # fp: it should be communicate but model predict as local
-        # tn: it should be communicate, model predict as communicate
-        fp_count = 0
-        tn_count = 0
-        for label, predict in zip(y_true, y_pred):
-            if label == self.other_class_id:
-                if predict != label:
-                    fp_count += 1
-                else:
-                    tn_count += 1
-        if (fp_count + tn_count) == 0:
-            return 0.0
-        return fp_count / (fp_count + tn_count) 
-
-    def run_simulation(
+    def run(
         self,
         species_labels: Dict[int, str],
         species_composition: Dict[str, int],
         num_runs: int=30,
         sample_size: int=1000,
-        plot_confusion_matrix: bool=False,
+        enable_confusion_matrix: bool=False,
         save_path=None,
     ):
         """
@@ -236,16 +178,7 @@ class MonteCarloSimulation:
         for run in range(num_runs):
             y_true: List[int] = []
             y_pred: List[int] = []
-            sampled_species = []
-            for species in self.species_labels.keys():
-                sampled_species.append(species)
-
-            remaining_k = sample_size - len(sampled_species)
-            sampled_species += random.choices(
-                population=list(self.species_labels.keys()),
-                weights=[self.species_probs[int(sid)] for sid in self.species_labels.keys()],
-                k=remaining_k
-            )
+            sampled_species = create_stratified_weighted_sample(self.species_labels, self.species_probs, sample_size)
             random.shuffle(sampled_species)
 
             num_comm = 0
@@ -278,16 +211,19 @@ class MonteCarloSimulation:
             all_pred.extend(y_pred)
 
         model_name = os.path.basename(self.model_path).replace(".onnx", "")
-
+        accuracy = accuracy_score(all_true, all_pred)
+        f1 = f1_score(all_true, all_pred, average="macro")
         if save_path:
-            accuracy = accuracy_score(all_true, all_pred)
-            df = generate_report(all_true, all_pred, species_names, total_support_list, float(accuracy)) 
-
-            os.makedirs(save_path, exist_ok=True)
-            with pd.option_context('display.max_rows', None, 'display.max_columns', None): 
-                df.to_csv(os.path.join(save_path, f"{model_name}.csv"))
-
-        print(f"Average communication for {model_name}: {sum(comm_rates)/len(comm_rates)}", end=" ")
-        print(f"FPR: {self._false_positive_rate(all_true, all_pred)}")
-        if plot_confusion_matrix:
-            self._plot_confusion_matrix(all_true, all_pred)
+            save_report(
+                save_path,
+                model_name,
+                all_true,
+                all_pred,
+                self.species_labels,
+                list(self.species_labels.keys()),
+                float(accuracy),
+                total_support_list,
+                enable_confusion_matrix
+            )
+        print(f"Accuracy: {accuracy} | Macro F1-Score: {f1:.4f} | FPR: {false_positive_rate(self.other_class_id, all_true, all_pred):.4f}")
+        print(f"Average saving rate for {model_name}: {sum(comm_rates)/len(comm_rates):.4f}", end=" ")

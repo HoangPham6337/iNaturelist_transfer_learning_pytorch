@@ -275,7 +275,7 @@ def validation_onnx(onnx_path: str, device: str = "cpu"):
     """
     model_name = os.path.basename(onnx_path)
     dom = model_name.replace(".onnx", "").split("_")[1]
-    _, train_images, val_images, species_dict, species_composition = manifest_generator_wrapper(1.0)
+    _, train_images, val_images, species_dict, species_composition = manifest_generator_wrapper(0.5)
     val_dataset = CustomDataset(val_images, train=False, img_size=(224, 224))
     val_loader = DataLoader(
         val_dataset,
