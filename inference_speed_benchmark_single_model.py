@@ -143,9 +143,6 @@ if __name__ == "__main__":
         model_species_labels = json.load(data)
         model_species_labels = {int(k) : v for k, v in model_species_labels.items()}
         model_species_labels_inverted = {v : k for k, v in model_species_labels.items()}
-    
-    with open("./inference_results/pred_other_result_50.json") as infer_data:
-        pred_results: List[str] = json.load(infer_data)
 
 
     pipeline = InferenceBenchmarkSingleModel(

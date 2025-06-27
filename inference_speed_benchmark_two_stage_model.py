@@ -7,7 +7,6 @@ import timeit
 
 import numpy as np
 import onnxruntime as ort
-import scipy.special
 from onnxruntime import InferenceSession
 from tqdm import tqdm
 
@@ -22,7 +21,7 @@ class ModelType(Enum):
     BIG_MODEL = 1
 
 
-class FullPipelineMonteCarloSimulation:
+class InferenceSpeedBenchmarkFullPipeline:
     def __init__(
         self,
         small_model_path: str,
@@ -165,12 +164,9 @@ if __name__ == "__main__":
         big_species_labels = json.load(full_bird_insect_labels)
         big_species_labels = {int(k) : v for k, v in big_species_labels.items()}
 
-    pipeline = FullPipelineMonteCarloSimulation(
+    pipeline = InferenceSpeedBenchmarkFullPipeline(
         f"/home/tom-maverick/Documents/Final Results/MobileNetV3/mobilenet_v3_large_{int(threshold * 100)}.onnx",
-        # "/home/tom-maverick/Documents/Final Results/InceptionV3_HG_onnx/inceptionv3_full_bird_insect.onnx",
-        # "/home/tom-maverick/Documents/Final Results/InceptionV3_HG_onnx/inceptionv3_inat_other_50.onnx",
         "/home/tom-maverick/Desktop/convnext_full_inat_bird_insect.onnx",
-        # "/home/tom-maverick/Documents/Final Results/InceptionV3_HG_onnx/inceptionv3_inat_other_50.onnx",
 
         global_image_data,
         global_species_labels,
